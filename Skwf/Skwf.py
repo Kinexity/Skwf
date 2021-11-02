@@ -241,13 +241,17 @@ def particles():
 	r_c = 2.5
 	N_t = int(T / dt)
 	plot_step = N_t / int(T / 1e-1)
-	plotting = True
+	plotting = False
 	lin = np.tile(np.linspace(0,particleRow - 1, particleRow), (particleRow,1))
 	pos = np.transpose(np.reshape(np.stack([lin, np.transpose(lin)]), (2,particleNumber))) * dx + dx / 2
 	v = np.random.random((particleNumber,2)) - 0.5
+	sumv2 = np.sum(v ** 2) / (2 * particleNumber)
+	fs = np.sqrt(temp / sumv2)
+	v*=fs
 	pos_tiled = np.tile(pos, (particleNumber, 1, 1))
 	T_arr = []
 	p_arr = []
+	M_arr = []
 	k_b = const.Boltzmann
 	K_0 = np.sum(v ** 2) / (particleNumber * k_b)
 	cycles = N_t
@@ -267,9 +271,10 @@ def particles():
 		v += F_s * dt
 		pos += v * dt
 		pos %= boxsize
-		T = np.sum(v ** 2) / (2 * particleNumber * k_b)
+		T = np.sum(v ** 2) / (2 * particleNumber * kB)
 		np.fill_diagonal(F_mag,0.)
-		P = particleNumber * k_b * T / V - np.sum(F_mag * d) / (2 * V)
+		P = particleNumber * kB * T / V + np.sum(F_mag * d) / (2 * V)
+		M_arr.append(- np.sum(F_mag * d) / (2 * V))
 		if (T > 10 * K_0):
 			cycles = tp
 			break
@@ -299,9 +304,10 @@ def particles():
 				images.append(imageio.imread('img' + nStr + '.png'))
 		imageio.mimsave('movie.gif', images)#, duration=10)
 	plt.clf()
-	plt.plot(T_arr)
-	plt.show()
-	plt.plot(p_arr)
+	plt.plot(T_arr, label="T")
+	plt.plot(p_arr, label="p")
+	#plt.plot(M_arr, label="m")
+	plt.legend()
 	plt.show()
 	return
 
