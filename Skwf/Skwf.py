@@ -9,6 +9,10 @@ import scipy.constants as const
 from threading import Thread
 import os
 from scipy.optimize import curve_fit
+from collections import deque
+from joblib import Parallel, delayed
+import time
+
 
 #x = np.linspace(-np.pi,np.pi,111)
 #y1 = np.cos(x)
@@ -310,7 +314,7 @@ def particles(temp):
 			nStr = str(tp)
 			nStr = nStr.rjust(5,'0')
 			for r in pos: # pętla po cząstkach
-				a = plt.gca() # ‘get current axes’ (to add smth to them)
+				a = plt.gca() # ‘get current axes' (to add smth to them)
 				cir = Circle(((r[0] + boxsize / 2.) % boxsize, (r[1] + boxsize / 2.) % boxsize), radius=promien) # kółko tam gdzie jest cząstka
 				a.add_patch(cir) # dodaj to kółko do rysunku
 				plt.plot() # narysuj
@@ -562,7 +566,7 @@ def frakt_levy():
 	x_rec = np.zeros(N + 1)
 	y_rec = np.zeros(N + 1)
 	m[0] = [0.5, -0.5, 0.5, 0.5, 0.0, 0.0]
-	m[1] =  [0.5, 0.5, -0.5, 0.5, 0.5, 0.5]
+	m[1] = [0.5, 0.5, -0.5, 0.5, 0.5, 0.5]
 	choices = np.random.choice([0,1], size=N, p=prob)
 	for i in range(N):
 		x_rec[i + 1] = m[choices[i]][0] * x_rec[i] + m[choices[i]][1] * y_rec[i] + m[choices[i]][4]
@@ -598,11 +602,162 @@ def frakt_levy():
 	plt.show()
 	return
 
+def perk(L=20, p=0.45, save=False):
+	lattice = np.ones((L,L)) * (-1)
+	tossing = np.random.random((L,L)) < p
+	find_0 = (L // 2,L // 2)
+	decs = [np.array([0,1]),np.array([1,0]),np.array([0,-1]),np.array([-1,0])]
+	for i in range(L // 2):
+		t_sub = tossing[find_0[0] - i:find_0[0] + i + 1,find_0[1] - i:find_0[1] + i + 1]
+		l = len(t_sub)
+		temp = np.argmax(t_sub)
+		temp2 = (temp // l + find_0[0] - i,temp % l + find_0[1] - i)
+		if (temp2):
+			find_0 = temp2
+			break
+	coords = np.array(find_0)
+	cluster = deque()
+	cluster.append(coords)
+	lattice[tuple(coords)] = 1
+	count = 0
+	try:
+		os.mkdir('grow')
+	except Exception:
+		pass
+	while(len(cluster) > 0):
+		cur_pos = cluster.pop()
+		for dec in decs:
+			temp_pos = cur_pos + dec
+			if (np.all(temp_pos < L) and np.all(temp_pos >= 0) and lattice[tuple(temp_pos)] == -1):
+				lattice[tuple(temp_pos)] = tossing[tuple(temp_pos)]
+				if lattice[tuple(temp_pos)]:
+					cluster.append(temp_pos)
+		if save and count % 10 == 0:
+			plt.imshow(lattice, interpolation='nearest',cmap='magma')
+			plt.grid()
+			plt.savefig('grow/img' + str(count) + '.png')
+		count += 1
+	# also cmap='viridis','inferno','plasma'
+	plt.imshow(lattice, interpolation='nearest',cmap='magma')
+	plt.grid()
+	plt.show()
+	return
+
+def perk_prob_elem(L, p):
+	lattice = np.ones((L,L)) * (-1)
+	tossing = np.random.random((L,L)) < p
+	find_0 = (L // 2,L // 2)
+	decs = [np.array([0,1]),np.array([1,0]),np.array([0,-1]),np.array([-1,0])]
+	for i in range(L // 2):
+		t_sub = tossing[find_0[0] - i:find_0[0] + i + 1,find_0[1] - i:find_0[1] + i + 1]
+		l = len(t_sub)
+		temp = np.argmax(t_sub)
+		temp2 = (temp // l + find_0[0] - i,temp % l + find_0[1] - i)
+		if (temp2):
+			find_0 = temp2
+			break
+	coords = np.array(find_0)
+	cluster = deque()
+	cluster.append(coords)
+	lattice[tuple(coords)] = 1
+	reached = False
+	count = 0
+	while(len(cluster) > 0):
+		cur_pos = cluster.pop()
+		count +=1
+		for dec in decs:
+			temp_pos = cur_pos + dec
+			bar = np.all(temp_pos < L) and np.all(temp_pos >= 0)
+			reached = reached or not bar
+			if reached:
+				return (reached, 0)
+			if (bar and lattice[tuple(temp_pos)] == -1):
+				lattice[tuple(temp_pos)] = tossing[tuple(temp_pos)]
+				if lattice[tuple(temp_pos)]:
+					cluster.append(temp_pos)
+	return (reached, count)
+
+def perk_prob_p(L,p,it):
+	count = 0
+	avg = 0
+	for i in range(it):
+		r,c = perk_prob_elem(L,p)
+		if r:
+			count+=1
+		else:
+			avg = (avg * (i - count) + c) / float(i - count + 1) 
+	return (float(count) / it, avg)
+
+def perk_prob(plot=True):
+	Ls = [500]
+	avgs = []
+	probs_l = []
+	prob_c = 50
+	col = ['g','r','b']
+	probs = np.linspace(0.5,0.7,prob_c)
+	for L in Ls:
+		results = list(map(list, zip(*Parallel(n_jobs=prob_c)(delayed(perk_prob_p)(L,p,100) for p in probs))))
+		avgs.append(results[1])
+		probs_l.append(results[0])
+	if plot:
+		for i in range(len(Ls)):
+			plt.plot(probs,probs_l[i],'.' + col[i],label='L = ' + str(Ls[i]))
+		plt.legend()
+		plt.show()
+		for i in range(len(Ls)):
+			plt.plot(probs,avgs[i],'.' + col[i],label='L = ' + str(Ls[i]))
+		plt.legend()
+		plt.show()
+
+def perk_fit(p,p_c,a):
+	return 0.5 * (np.tanh((p - p_c) / a) + 1)
+
+def perk_prob_fit(plot=True):
+	Ls = np.arange(50,501,50)
+	avgs = []
+	probs_l = []
+	prob_c = 50
+	col = ['g','r','b']
+	probs = np.linspace(0.55,0.625,prob_c)
+	probs_plot = np.linspace(0.55,0.625,100 * prob_c)
+	pc_l = []
+	a_l = []
+	for L in Ls:
+		print(L)
+		results = list(map(list, zip(*Parallel(n_jobs=prob_c)(delayed(perk_prob_p)(L,p,100) for p in probs))))
+		avgs.append(results[1])
+		probs_l.append(results[0])
+		par,cov = curve_fit(perk_fit, probs, results[0])
+		pc_l.append(par[0])
+		a_l.append(par[1])
+		if (L == 250):
+			plt.plot(probs,results[0],".r")
+			plt.plot(probs_plot,perk_fit(probs_plot, *par),"-b")
+			plt.show()
+	print(pc_l)
+	print(a_l)
+	par = np.polyfit(1 / Ls,pc_l,1)
+	plt.plot(1 / Ls,pc_l,".r")
+	plt.plot(1 / Ls,np.polyval(par,1 / Ls),"-g")
+	plt.title(str(par[1]))
+	plt.show()
+	plt.xscale("log")
+	plt.yscale("log")
+	plt.plot(Ls,a_l,".r")
+	Ls_l = np.arange(Ls[0],Ls[-1],1)
+	plt.plot(Ls_l,Ls_l ** (-1 / (4. / 3)))#a_l[0] / (Ls[0] ** (-1 / (4 / 3))) * 
+	plt.show()
+
+
 def main():
-	frakt_sierp()
-	frakt_barn()
-	frakt_levy()
-	frakt_drag()
+	#perk(20,0.45)
+	#perk(20,0.65)
+	#perk(100,0.59, True)
+	#t1 = time.time()
+	#perk_prob(False)
+	#t2 = time.time()
+	#print(t2 - t1)
+	perk_prob_fit()
 	return
 
 main()
