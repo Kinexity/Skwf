@@ -1,0 +1,81 @@
+def DLA_1():
+	try:
+		os.mkdir('DLA')
+	except Exception:
+		pass
+	lim = 150
+	L = 300
+	N = 500
+	particles = 10000
+	lattice = np.zeros((L * L))
+	moves = [1,L,-1,-L]
+	lattice[L // 2 * (L + 1)] = 1
+	angles = np.random.uniform(0.0,2 * np.pi,(particles))
+	R = 11.
+	counter = 0
+	for angle in angles:
+		pos_ = [int(L / 2 + R * np.cos(angle)), int(L / 2 + R * np.sin(angle))]
+		pos = L * pos_[0] + pos_[1]
+		choices = np.random.choice([0,1,2,3], size=N)
+		mv_p = np.take(moves, choices)
+		csmvp = np.cumsum(mv_p) + pos
+		poss = np.transpose(np.stack([csmvp // L,csmvp % L])) - np.tile(np.array([L // 2,L // 2]), (N,1))
+		dist = np.linalg.norm(poss,axis=1)
+		dist_check = dist > R + lim
+		lt = [np.take(lattice, csmvp + nb) for nb in moves]
+		lt.append(dist_check)
+		nbs = np.any(np.stack(lt), axis = 0)
+		frt = np.argmax(nbs)
+		if (dist_check[frt]):
+			continue
+		pos = csmvp[frt]
+		if any([lattice[pos + nb] for nb in moves]):
+			lattice[pos] = 1
+			counter += 1
+			if dist[frt] + 10 > R:
+				R = dist[frt] + 10
+		if counter % 50 == 0:
+			plt.imshow(np.reshape(lattice, (L,L)), interpolation='nearest',cmap='magma')
+			plt.grid()
+			plt.savefig('DLA/img' + str(counter) + '.png')
+	plt.imshow(np.reshape(lattice, (L,L)), interpolation='nearest',cmap='magma')
+	plt.grid()
+	plt.show()
+	return
+
+def DLA():
+	try:
+		os.mkdir('DLA')
+	except Exception:
+		pass
+	L = 1000
+	N = 500
+	particles = 10000
+	lattice = np.zeros((L,L))
+	moves = [np.array([0,1]),np.array([1,0]),np.array([0,-1]),np.array([-1,0])]
+	lattice[L // 2,L // 2] = 1
+	angles = np.random.uniform(0.0,2 * np.pi,(particles))
+	R = 11.
+	counter = 0
+	for angle in angles:
+		pos = np.array([int(L / 2 + R * np.cos(angle)),int(L / 2 + R * np.sin(angle))])
+		choices = np.random.choice([0,1,2,3], size=N)
+		for choice in choices:
+			if any([(lattice[tuple(pos + nb)] == 1) for nb in moves]):
+				lattice[tuple(pos)] = 1
+				dist = np.linalg.norm(pos - np.array([L // 2,L // 2])) + 10
+				if (dist > R):
+					R = dist
+				counter += 1
+				break
+			pos += moves[choice]
+			if np.linalg.norm(pos - np.array([L // 2,L // 2])) > R + 50:
+				break
+		if counter % 50 == 0:
+			plt.imshow(lattice, interpolation='nearest',cmap='magma')
+			plt.grid()
+			plt.savefig('DLA/img' + str(counter) + '.png')
+	plt.imshow(lattice, interpolation='nearest',cmap='magma')
+	plt.grid()
+	plt.show()
+	return

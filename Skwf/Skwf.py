@@ -12,6 +12,7 @@ from scipy.optimize import curve_fit
 from collections import deque
 from joblib import Parallel, delayed
 import time
+from numba import jit
 
 
 #x = np.linspace(-np.pi,np.pi,111)
@@ -745,19 +746,147 @@ def perk_prob_fit(plot=True):
 	plt.yscale("log")
 	plt.plot(Ls,a_l,".r")
 	Ls_l = np.arange(Ls[0],Ls[-1],1)
-	plt.plot(Ls_l,Ls_l ** (-1 / (4. / 3)))#a_l[0] / (Ls[0] ** (-1 / (4 / 3))) * 
+	plt.plot(Ls_l,Ls_l ** (-1 / (4. / 3)))#a_l[0] / (Ls[0] ** (-1 / (4 / 3))) *
 	plt.show()
 
+def DLA(p=0.125):
+	try:
+		os.mkdir('DLA')
+	except Exception:
+		pass
+	L = 300
+	steps = 1000
+	particles = 10000
+	lattice = np.zeros((L,L))
+	moves = [np.array([0,1]),np.array([1,0]),np.array([0,-1]),np.array([-1,0])]
+	lattice[L // 2,L // 2] = 1
+	angles = np.random.uniform(0.0,2 * np.pi,(particles))
+	R = 11.
+	counter = 0
+	for angle in angles:
+		pos = np.array([int(L / 2 + R * np.cos(angle)),int(L / 2 + R * np.sin(angle))])
+		choices = np.random.choice([0,1,2,3], size=steps)
+		probs = np.random.uniform(0.,1.,(steps)) > p
+		for i in range(len(choices)):
+			if (any([(lattice[tuple(pos + nb)] == 1) for nb in moves]) and probs[i]):
+				lattice[tuple(pos)] = 1
+				dist = np.linalg.norm(pos - np.array([L // 2,L // 2])) + 10
+				if (dist > R):
+					R = dist
+				counter += 1
+				break
+			while (i < len(choices) and lattice[tuple(pos + moves[choices[i]])]):
+				i += 1
+			if (i == len(choices)):
+				break
+			pos += moves[choices[i]]
+			if np.linalg.norm(pos - np.array([L // 2,L // 2])) > R + 50:
+				break
+		if counter % 50 == 0:
+			plt.imshow(lattice, interpolation='nearest',cmap='magma')
+			plt.grid()
+			plt.savefig('DLA/img' + str(counter) + '.png')
+	plt.imshow(lattice, interpolation='nearest',cmap='magma')
+	plt.grid()
+	plt.show()
+	return
+
+def DLA():
+	try:
+		os.mkdir('DLA')
+	except Exception:
+		pass
+	L = 300
+	steps = 1000
+	particles = 10000
+	lattice = np.zeros((L,L))
+	moves = [np.array([0,1]),np.array([1,0]),np.array([0,-1]),np.array([-1,0])]
+	lattice[L // 2,L // 2] = 1
+	angles = np.random.uniform(0.0,2 * np.pi,(particles))
+	R = 11.
+	counter = 0
+	for angle in angles:
+		pos = np.array([int(L / 2 + R * np.cos(angle)),int(L / 2 + R * np.sin(angle))])
+		choices = np.random.choice([0,1,2,3], size=steps)
+		probs = np.random.uniform(0.,1.,(steps)) < p
+		for i in range(len(choices)):
+			if (any([(lattice[tuple(pos + nb)] == 1) for nb in moves]) and probs[i]):
+				lattice[tuple(pos)] = 1
+				dist = np.linalg.norm(pos - np.array([L // 2,L // 2])) + 10
+				if (dist > R):
+					R = dist
+				counter += 1
+				break
+			while (i < len(choices) and lattice[tuple(pos + moves[choices[i]])]):
+				i += 1
+			if (i == len(choices)):
+				break
+			pos += moves[choices[i]]
+			if np.linalg.norm(pos - np.array([L // 2,L // 2])) > R + 50:
+				break
+		if counter % 50 == 0:
+			plt.imshow(lattice, interpolation='nearest',cmap='magma')
+			plt.grid()
+			plt.savefig('DLA/img' + str(counter) + '.png')
+	plt.imshow(lattice, interpolation='nearest',cmap='magma')
+	plt.grid()
+	plt.show()
+	return
+
+@jit
+def DLA_1():
+	lim = 150
+	L = 1000
+	N = 500
+	M = 10
+	ret_lis = []
+	particles = 1000000
+	lattice = np.zeros((L * L))
+	moves = [1,L,-1,-L]
+	lattice[L // 2 * (L + 1)] = M
+	angles = np.random.uniform(0.0,2 * np.pi,(particles))
+	R = 11.
+	counter = 1
+	for angle in angles:
+		pos_ = [int(L / 2 + R * np.cos(angle)), int(L / 2 + R * np.sin(angle))]
+		pos = L * pos_[0] + pos_[1]
+		choices = np.random.choice([0,1,2,3], size=N)
+		mv_p = np.take(moves, choices)
+		csmvp = np.cumsum(mv_p) + pos
+		poss = np.transpose(np.stack([csmvp // L,csmvp % L])) - np.tile(np.array([L // 2,L // 2]), (N,1))
+		dist = np.linalg.norm(poss,axis=1)
+		dist_check = dist > R + lim
+		lt = [np.take(lattice, csmvp + nb) for nb in moves]
+		lt.append(dist_check)
+		nbs = np.any(np.stack(lt) == 10, axis = 0)
+		frt = np.argmax(nbs)
+		if (dist_check[frt]):
+			continue
+		pos = csmvp[frt]
+		for nb in moves:
+			if lattice[pos + nb] == M:
+				lattice[pos] += 1
+				if lattice[pos] == M:
+					counter += 1
+					if counter % 50 == 0:
+						ret_lis.append(np.reshape(lattice, (L,L)) == M)
+				if dist[frt] + 10 > R:
+					R = dist[frt] + 10
+	return ret_lis
+
+def DLA_draw():
+	try:
+		os.mkdir('DLA')
+	except Exception:
+		pass
+	lts = DLA_1()
+	for i in range(len(lts)):
+		plt.imshow(lts[i], interpolation='nearest',cmap='magma')
+		plt.grid()
+		plt.savefig('DLA/img' + str(i) + '.png')
 
 def main():
-	#perk(20,0.45)
-	#perk(20,0.65)
-	#perk(100,0.59, True)
-	#t1 = time.time()
-	#perk_prob(False)
-	#t2 = time.time()
-	#print(t2 - t1)
-	perk_prob_fit()
+	DLA_draw()
 	return
 
 main()
