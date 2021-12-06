@@ -833,45 +833,59 @@ def DLA():
 	plt.show()
 	return
 
-@jit
+@jit(nopython=True)
 def DLA_1():
 	lim = 150
 	L = 1000
-	N = 500
-	M = 10
+	N = 5000
 	ret_lis = []
-	particles = 1000000
+	particles = 10000
 	lattice = np.zeros((L * L))
 	moves = [1,L,-1,-L]
-	lattice[L // 2 * (L + 1)] = M
+	lattice[L // 2 * (L + 1)] = 1
 	angles = np.random.uniform(0.0,2 * np.pi,(particles))
 	R = 11.
 	counter = 1
 	for angle in angles:
 		pos_ = [int(L / 2 + R * np.cos(angle)), int(L / 2 + R * np.sin(angle))]
 		pos = L * pos_[0] + pos_[1]
-		choices = np.random.choice([0,1,2,3], size=N)
-		mv_p = np.take(moves, choices)
+		choices = np.random.randint(0,4, size=N)
+		mv_p = np.zeros((len(choices)))
+		for i in range(len(choices)):
+			mv_p[i] = moves[choices[i]]
 		csmvp = np.cumsum(mv_p) + pos
-		poss = np.transpose(np.stack([csmvp // L,csmvp % L])) - np.tile(np.array([L // 2,L // 2]), (N,1))
-		dist = np.linalg.norm(poss,axis=1)
+		tmp = np.zeros((len(csmvp),2))
+		tmp[:,0] = csmvp // L
+		tmp[:,1] = csmvp % L
+		poss = np.transpose(tmp) - L // 2 * np.ones((N,2))
+		dist = np.sqrt(np.sum(poss * poss,axis=1))
 		dist_check = dist > R + lim
-		lt = [np.take(lattice, csmvp + nb) for nb in moves]
-		lt.append(dist_check)
-		nbs = np.any(np.stack(lt) == 10, axis = 0)
+		lt = np.zeros((len(csmvp), len(moves) + 1))
+		for i in range(len(moves)):
+			temp = csmvp + moves[i]
+			for j in range(len(csmvp)):
+				lt[j,i] = lattice[temp[j]]
+		[np.array([lattice[ind] for ind in (csmvp + nb)]) for nb in moves]
+		lt[:,len(moves)] = dist_check
+		nbs = np.ones(len(lt[0])) #np.any(np.stack(lt), axis = 0)
+		for eleme in lt:
+			nbs = nbs or eleme
 		frt = np.argmax(nbs)
 		if (dist_check[frt]):
 			continue
 		pos = csmvp[frt]
 		for nb in moves:
-			if lattice[pos + nb] == M:
-				lattice[pos] += 1
-				if lattice[pos] == M:
+			if (pos + nb >= 0 and pos + nb < L * L):
+				if lattice[pos + nb]:
+					lattice[pos] = 1
 					counter += 1
 					if counter % 50 == 0:
-						ret_lis.append(np.reshape(lattice, (L,L)) == M)
-				if dist[frt] + 10 > R:
-					R = dist[frt] + 10
+						temp = np.reshape(np.array(list(lattice)), (L,L))
+						ret_lis.append(temp)
+					if dist[frt] + 10 > R:
+						R = dist[frt] + 10
+			else:
+				return ret_lis
 	return ret_lis
 
 def DLA_draw():
@@ -879,7 +893,10 @@ def DLA_draw():
 		os.mkdir('DLA')
 	except Exception:
 		pass
+	t1 = time.time()
 	lts = DLA_1()
+	t2 = time.time()
+	print(t2 - t1)
 	for i in range(len(lts)):
 		plt.imshow(lts[i], interpolation='nearest',cmap='magma')
 		plt.grid()
