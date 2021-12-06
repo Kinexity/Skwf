@@ -854,22 +854,12 @@ def DLA_1():
 		for i in range(len(choices)):
 			mv_p[i] = moves[choices[i]]
 		csmvp = np.cumsum(mv_p) + pos
-		tmp = np.zeros((len(csmvp),2))
-		tmp[:,0] = csmvp // L
-		tmp[:,1] = csmvp % L
-		poss = np.transpose(tmp) - L // 2 * np.ones((N,2))
-		dist = np.sqrt(np.sum(poss * poss,axis=1))
+		poss = np.transpose(np.stack([csmvp // L,csmvp % L])) - np.tile(np.array([L // 2,L // 2]), (N,1))
+		dist = np.linalg.norm(poss,axis=1)
 		dist_check = dist > R + lim
-		lt = np.zeros((len(csmvp), len(moves) + 1))
-		for i in range(len(moves)):
-			temp = csmvp + moves[i]
-			for j in range(len(csmvp)):
-				lt[j,i] = lattice[temp[j]]
-		[np.array([lattice[ind] for ind in (csmvp + nb)]) for nb in moves]
-		lt[:,len(moves)] = dist_check
-		nbs = np.ones(len(lt[0])) #np.any(np.stack(lt), axis = 0)
-		for eleme in lt:
-			nbs = nbs or eleme
+		lt = [np.take(lattice, csmvp + nb) for nb in moves]
+		lt.append(dist_check)
+		nbs = np.any(np.stack(lt), axis = 0)
 		frt = np.argmax(nbs)
 		if (dist_check[frt]):
 			continue
