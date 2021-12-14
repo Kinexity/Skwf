@@ -13,7 +13,9 @@ from collections import deque
 from joblib import Parallel, delayed
 import time
 from numba import jit
-
+import random
+import pyroot
+import scipy.special as spec
 
 #x = np.linspace(-np.pi,np.pi,111)
 #y1 = np.cos(x)
@@ -791,47 +793,43 @@ def DLA(p=0.125):
 	plt.show()
 	return
 
+@jit(nopython=True)
 def DLA():
-	try:
-		os.mkdir('DLA')
-	except Exception:
-		pass
 	L = 300
 	steps = 1000
-	particles = 10000
+	particles = 1000
 	lattice = np.zeros((L,L))
 	moves = [np.array([0,1]),np.array([1,0]),np.array([0,-1]),np.array([-1,0])]
 	lattice[L // 2,L // 2] = 1
 	angles = np.random.uniform(0.0,2 * np.pi,(particles))
 	R = 11.
 	counter = 0
+	ct = 0
+	lattices = []
 	for angle in angles:
+		break_flag = False
 		pos = np.array([int(L / 2 + R * np.cos(angle)),int(L / 2 + R * np.sin(angle))])
-		choices = np.random.choice([0,1,2,3], size=steps)
-		probs = np.random.uniform(0.,1.,(steps)) < p
-		for i in range(len(choices)):
-			if (any([(lattice[tuple(pos + nb)] == 1) for nb in moves]) and probs[i]):
-				lattice[tuple(pos)] = 1
-				dist = np.linalg.norm(pos - np.array([L // 2,L // 2])) + 10
-				if (dist > R):
-					R = dist
-				counter += 1
-				break
-			while (i < len(choices) and lattice[tuple(pos + moves[choices[i]])]):
-				i += 1
-			if (i == len(choices)):
-				break
-			pos += moves[choices[i]]
-			if np.linalg.norm(pos - np.array([L // 2,L // 2])) > R + 50:
-				break
+		while (not break_flag):
+			for nb in moves:
+				new_p = pos + nb
+				if (lattice[new_p[0], new_p[1]] == 1):
+					lattice[pos[0], pos[1]] = 1
+					pos_loc = pos - np.array([L // 2,L // 2])
+					dist = np.sqrt(np.sum(pos_loc ** 2)) + 10
+					R = max(R, dist)
+					counter += 1
+					break_flag = True
+					break
+			pos += moves[random.randint(0,3)]
+			pos_loc = pos - np.array([L // 2,L // 2])
+			break_flag = break_flag or (np.sqrt(np.sum(pos_loc ** 2)) > R + 50) or (pos[0] > L - 1 or pos[0] < 1 or pos[1] > L - 1 or pos[1] < 1)
 		if counter % 50 == 0:
-			plt.imshow(lattice, interpolation='nearest',cmap='magma')
-			plt.grid()
-			plt.savefig('DLA/img' + str(counter) + '.png')
-	plt.imshow(lattice, interpolation='nearest',cmap='magma')
-	plt.grid()
-	plt.show()
-	return
+			lattices.append(lattice.copy())
+			#print(ct)
+			#ct += 1
+			#if ct > 5:
+			#	break
+	return lattices
 
 @jit(nopython=True)
 def DLA_1():
@@ -883,17 +881,127 @@ def DLA_draw():
 		os.mkdir('DLA')
 	except Exception:
 		pass
+	try:
+		os.mkdir('DLA/jit')
+	except Exception:
+		pass
 	t1 = time.time()
-	lts = DLA_1()
+	lts = DLA()
 	t2 = time.time()
 	print(t2 - t1)
+	print(len(lts))
 	for i in range(len(lts)):
+		plt.clf()
 		plt.imshow(lts[i], interpolation='nearest',cmap='magma')
 		plt.grid()
-		plt.savefig('DLA/img' + str(i) + '.png')
+		plt.savefig('DLA/jit/img' + str(i) + '.png')
+
+@jit(nopython=True)
+def sweep(grid, beta, L):
+	moves = [np.array([0,1]),np.array([1,0]),np.array([0,-1]),np.array([-1,0])]
+	pos_arr = np.random.randint(0, L, (L * L,2))
+	probs = np.random.uniform(0.,1.,size = (L * L))
+	for pos,r in zip(pos_arr,probs):
+		delta = 0.
+		for m in moves:
+			new_p = (pos + m) % L
+			delta += grid[new_p[0], new_p[1]]
+		delta *= 2.
+		prob = 1. / (1 + np.exp(-beta * delta))
+		grid[pos[0], pos[1]] = (r < prob) - (r >= prob)
+
+def MCS(L=5, norm=1000):
+	Ts = np.linspace(1.,5.,5)
+	mag_mods = {}
+	grid = np.ones((L,L))
+	for B,T in zip((1. / Ts),Ts):
+		mag_mods[T] = []
+		for i in range(norm):
+			sweep(grid, B, L)
+		for i in range(5000):
+			sweep(grid, B, L)
+			mag_mods[T].append(np.sum(grid) / L ** 2)
+	for T in Ts:
+		print(T, np.mean(np.abs(mag_mods[T])))
+	return
+
+@jit(nopython=True)
+def MCS_thr(B,L):
+	grid = np.ones((L,L))
+	mag_mods_loc = np.zeros((5000))
+	for i in range(2000):
+		sweep(grid, B, L)
+	for i in range(5000):
+		sweep(grid, B, L)
+		mag_mods_loc[i] = np.sum(grid) / L ** 2
+	return [np.mean(np.abs(mag_mods_loc)), np.var(mag_mods_loc) * B * L ** 2]
+
+@jit(nopython=True)
+def grid_energy(grid, L):
+	energy = 0.
+	for i in range(L):
+		for j in range(L):
+			energy -= grid[i,j] * (grid[(i - 1) % L,j] + grid[(i + 1) % L,j] + grid[i,(j - 1) % L] + grid[i,(j + 1) % L])
+	#energy = -np.sum(grid * (np.roll(grid, 1, axis=0) + np.roll(grid, -1, axis=0) + np.roll(grid, 1, axis=1) + np.roll(grid, -1, axis=1)))
+	return energy
+
+def MCS_thr_2(B,L):
+	grid = np.ones((L,L))
+	energies = np.zeros((5000))
+	for i in range(2000):
+		sweep(grid, B, L)
+	for i in range(5000):
+		sweep(grid, B, L)
+		energies[i] = grid_energy(grid, L)
+	return np.var(energies) * (B / L) ** 2
+
+Ts = np.linspace(1.,5.,1000)
+
+def MCS_2(L=5):
+	return list(map(list, zip(*Parallel(n_jobs=20)(delayed(MCS_thr)(B,L) for B in (1. / Ts)))))
+
+def MCS_3(L):
+	return Parallel(n_jobs=11)(delayed(MCS_thr_2)(B,L) for B in (1. / Ts))
+
+def an_en(beta):
+	k = 2 * np.tanh(2 * beta) / np.cosh(2 * beta)
+	kp = 2 * np.tanh(2 * beta) ** 2 - 1
+	return 2 / np.pi * (beta / np.tanh(2 * beta)) ** 2 * (2 * spec.ellipk(k ** 2) - 2 * spec.ellipe(k ** 2) - (1 - kp) * (np.pi / 2 + kp * spec.ellipk(k ** 2)))
+
+def MCS_2_main():
+	lim = np.argmax(Ts > (2. / (np.log(1 + np.sqrt(2)))))
+	Ts2 = Ts[:lim]
+	res = []
+	for L in [10]:#,20]:
+		t1 = time.time()
+		res.append(MCS_2(L))
+		t2 = time.time()
+		print(L, t2 - t1)
+	#plt.plot(Ts,res[0][0],".b",label="L=10")
+	#plt.plot(Ts,res[1][0],".g",label="L=20")
+	#plt.plot(Ts2,(1-np.sinh(2/Ts2)**-4)**(1./8),"-r",label="analityczne")
+	#print(res[0] / an_en(1. / Ts))
+	#plt.plot(Ts, res[0],"*g",label="numerycznie")
+	#plt.plot(Ts, 4 * an_en(1. / Ts),"-r",label="analityczne")
+	#plt.legend()
+	#plt.show()
+	#plt.plot(Ts,res[0][1],".r",label="L=10")
+	#plt.plot(Ts,res[1][1],".g",label="L=20")
+	#plt.legend()
+	#plt.show()
+	return
+
+def lnp():
+	M = np.loadtxt("C:\\Users\\26kub\\source\\repos\\skwf_cpp\\skwf_cpp\\data.txt")
+	plt.plot(M[:,0],M[:,2],".r",label="L=10")
+	plt.legend()
+	plt.show()
 
 def main():
-	DLA_draw()
+	#DLA_draw()
+	#MCS()
+	MCS_2_main()
+	#lnp()
 	return
 
 main()
