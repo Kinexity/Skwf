@@ -898,18 +898,15 @@ def DLA_draw():
 
 @jit(nopython=True)
 def sweep(grid, beta, L):
-	moves = [np.array([0,1]),np.array([1,0]),np.array([0,-1]),np.array([-1,0])]
 	pos_arr = np.random.randint(0, L, (L * L,2))
 	probs = np.random.uniform(0.,1.,size = (L * L))
 	for pos,r in zip(pos_arr,probs):
-		delta = 0.
-		for m in moves:
-			new_p = (pos + m) % L
-			delta += grid[new_p[0], new_p[1]]
-		delta *= 2.
-		prob = 1. / (1 + np.exp(-beta * delta))
-		grid[pos[0], pos[1]] = (r < prob) - (r >= prob)
-
+		delta = (grid[pos[0],(pos[1] + 1) % L] + grid[pos[0],(pos[1] - 1) % L] + grid[(pos[0] - 1) % L,pos[1]] + grid[(pos[0] + 1) % L,pos[1]]) * (2. * grid[pos[0], pos[1]])
+		if delta < 0:
+			grid[pos[0], pos[1]] *= -1
+		else:
+			prob = np.exp(-beta * delta)
+			grid[pos[0], pos[1]] *= ((r >= prob) - (r < prob)) #check
 def MCS(L=5, norm=1000):
 	Ts = np.linspace(1.,5.,5)
 	mag_mods = {}
@@ -924,6 +921,58 @@ def MCS(L=5, norm=1000):
 	for T in Ts:
 		print(T, np.mean(np.abs(mag_mods[T])))
 	return
+
+@jit(nopython=True)
+def chi(grid, L, col_ind):
+	sum = 0.
+	for col_ind_loc in range(L):
+		for row_ind_loc in range(L):
+			sum += grid[row_ind_loc, col_ind_loc] * grid[row_ind_loc, (col_ind_loc + col_ind) % L]
+	return sum / L ** 2
+
+def MCS_hb(L=500):
+	T = 2.
+	mag_mods = {}
+	grid = np.random.choice([-1,1],(L,L))
+	ts = [10,20,50,100,200,500,1000,2000,5000]
+	R = []
+	for i in range(5001):
+		sweep(grid, 1 / T, L)
+		#if i in [10,100,1000,5000]:
+		#	Cs = np.array([chi(grid, L, l) for l in range(L // 2)])
+		#	lim = -(np.argmax(np.flip(Cs > np.exp(-1.))) + 1)
+		#	Cs_trim = Cs[:lim]
+		#	C = -np.sum(np.log(Cs_trim))
+		#	plt.plot(Cs)
+		#	#plt.imshow(grid, interpolation='nearest',cmap='magma')
+		#	#plt.grid()
+		#	plt.show()
+		if i in ts:
+			Cs = np.array([chi(grid, L, l) for l in range(L // 2)])
+			lim = -(np.argmax(np.flip(Cs > np.exp(-1.))) + 1)
+			Cs_trim = Cs[:lim]
+			C = -np.sum(np.log(Cs_trim))
+			lim += L
+			R.append(lim * (lim + 1) / (2 * C))
+		print(i)
+	plt.clf()
+	print(ts, R)
+	plt.plot(ts,np.array(R) * (ts[0] ** (1 / 2)) / R[0],"*r",label="R")
+	plt.plot(ts,np.sqrt(ts),"-g",label="t**1/2")
+	plt.yscale("log")
+	plt.xscale("log")
+	plt.legend()
+	plt.show()
+	return
+
+def test():
+	ts = np.array([10, 20, 50, 100, 200, 500, 1000, 2000, 5000])
+	R = 1 / np.array([76678.90254210735, 34257.08959153745, 15512.010142922078, 8395.911168268487, 6021.3671186718675, 4108.885033247207, 2868.6649283142388, 2087.453491472444, 1441.7309553167202])
+	plt.plot(ts,R * (ts[0] ** (1 / 2)) / R[0])
+	plt.plot(ts,ts ** (1 / 2))
+	plt.yscale("log")
+	plt.xscale("log")
+	plt.show()
 
 @jit(nopython=True)
 def MCS_thr(B,L):
@@ -942,7 +991,8 @@ def grid_energy(grid, L):
 	for i in range(L):
 		for j in range(L):
 			energy -= grid[i,j] * (grid[(i - 1) % L,j] + grid[(i + 1) % L,j] + grid[i,(j - 1) % L] + grid[i,(j + 1) % L])
-	#energy = -np.sum(grid * (np.roll(grid, 1, axis=0) + np.roll(grid, -1, axis=0) + np.roll(grid, 1, axis=1) + np.roll(grid, -1, axis=1)))
+	#energy = -np.sum(grid * (np.roll(grid, 1, axis=0) + np.roll(grid, -1, axis=0)
+	#+ np.roll(grid, 1, axis=1) + np.roll(grid, -1, axis=1)))
 	return energy
 
 def MCS_thr_2(B,L):
@@ -969,25 +1019,30 @@ def an_en(beta):
 	return 2 / np.pi * (beta / np.tanh(2 * beta)) ** 2 * (2 * spec.ellipk(k ** 2) - 2 * spec.ellipe(k ** 2) - (1 - kp) * (np.pi / 2 + kp * spec.ellipk(k ** 2)))
 
 def MCS_2_main():
-	lim = np.argmax(Ts > (2. / (np.log(1 + np.sqrt(2)))))
-	Ts2 = Ts[:lim]
-	res = []
-	for L in [10]:#,20]:
-		t1 = time.time()
-		res.append(MCS_2(L))
-		t2 = time.time()
-		print(L, t2 - t1)
+	#lim = np.argmax(Ts > (2.  / (np.log(1 + np.sqrt(2)))))
+	#Ts2 = Ts[:lim]
+	#res = []
+	#for L in [10]:#,20]:
+	#	t1 = time.time()
+	#	res.append(MCS_2(L))
+	#	t2 = time.time()
+	#	print(L, t2 - t1)
+	MCS_hb()
+	#test()
 	#plt.plot(Ts,res[0][0],".b",label="L=10")
 	#plt.plot(Ts,res[1][0],".g",label="L=20")
 	#plt.plot(Ts2,(1-np.sinh(2/Ts2)**-4)**(1./8),"-r",label="analityczne")
-	#print(res[0] / an_en(1. / Ts))
+	#print(res[0] / an_en(1.  / Ts))
 	#plt.plot(Ts, res[0],"*g",label="numerycznie")
-	#plt.plot(Ts, 4 * an_en(1. / Ts),"-r",label="analityczne")
+	#plt.plot(Ts, 4 * an_en(1.  / Ts),"-r",label="analityczne")
 	#plt.legend()
 	#plt.show()
 	#plt.plot(Ts,res[0][1],".r",label="L=10")
 	#plt.plot(Ts,res[1][1],".g",label="L=20")
 	#plt.legend()
+	#plt.show()
+	#plt.imshow(lattice, interpolation='nearest',cmap='magma')
+	#plt.grid()
 	#plt.show()
 	return
 
@@ -997,11 +1052,17 @@ def lnp():
 	plt.legend()
 	plt.show()
 
+def lnp2():
+	M = np.loadtxt("C:\\Users\\26kub\\source\\repos\\SIR_simulation\\sim_data.txt")
+	plt.plot(M[:,0],M[:,2],".r",label="L=10")
+	plt.legend()
+	plt.show()
+
 def main():
 	#DLA_draw()
 	#MCS()
-	MCS_2_main()
-	#lnp()
+	#MCS_2_main()
+	lnp2()
 	return
 
 main()
