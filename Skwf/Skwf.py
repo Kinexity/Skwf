@@ -906,7 +906,8 @@ def sweep(grid, beta, L):
 			grid[pos[0], pos[1]] *= -1
 		else:
 			prob = np.exp(-beta * delta)
-			grid[pos[0], pos[1]] *= ((r >= prob) - (r < prob)) #check
+			grid[pos[0], pos[1]] *= ((r >= prob) - (r < prob))
+
 def MCS(L=5, norm=1000):
 	Ts = np.linspace(1.,5.,5)
 	mag_mods = {}
@@ -925,6 +926,7 @@ def MCS(L=5, norm=1000):
 @jit(nopython=True)
 def chi(grid, L, col_ind):
 	sum = 0.
+	#sub_grid = np.sum(grid, axis=1)
 	for col_ind_loc in range(L):
 		for row_ind_loc in range(L):
 			sum += grid[row_ind_loc, col_ind_loc] * grid[row_ind_loc, (col_ind_loc + col_ind) % L]
@@ -939,25 +941,23 @@ def MCS_hb(L=500):
 	for i in range(5001):
 		sweep(grid, 1 / T, L)
 		#if i in [10,100,1000,5000]:
-		#	Cs = np.array([chi(grid, L, l) for l in range(L // 2)])
-		#	lim = -(np.argmax(np.flip(Cs > np.exp(-1.))) + 1)
-		#	Cs_trim = Cs[:lim]
-		#	C = -np.sum(np.log(Cs_trim))
-		#	plt.plot(Cs)
-		#	#plt.imshow(grid, interpolation='nearest',cmap='magma')
-		#	#plt.grid()
+		#	#Cs = np.array([chi(grid, L, l) for l in range(L // 2)])
+		#	#lim = -(np.argmax(np.flip(Cs > np.exp(-1.))) + 1)
+		#	#Cs_trim = Cs[:lim]
+		#	#C = -np.sum(np.log(Cs_trim))
+		#	#plt.plot(Cs)
+		#	plt.imshow(grid, interpolation='nearest',cmap='magma')
+		#	plt.grid()
 		#	plt.show()
 		if i in ts:
 			Cs = np.array([chi(grid, L, l) for l in range(L // 2)])
-			lim = -(np.argmax(np.flip(Cs > np.exp(-1.))) + 1)
+			lim = np.argmax(np.cumsum(Cs > np.exp(-1.))) + 1
 			Cs_trim = Cs[:lim]
 			C = -np.sum(np.log(Cs_trim))
-			lim += L
 			R.append(lim * (lim + 1) / (2 * C))
 		print(i)
 	plt.clf()
-	print(ts, R)
-	plt.plot(ts,np.array(R) * (ts[0] ** (1 / 2)) / R[0],"*r",label="R")
+	plt.plot(ts,np.array(R) * (ts[-1] ** (1 / 2)) / R[-1],"*r",label="R")
 	plt.plot(ts,np.sqrt(ts),"-g",label="t**1/2")
 	plt.yscale("log")
 	plt.xscale("log")
@@ -1061,8 +1061,8 @@ def lnp2():
 def main():
 	#DLA_draw()
 	#MCS()
-	#MCS_2_main()
-	lnp2()
+	MCS_2_main()
+	#lnp2()
 	return
 
 main()
