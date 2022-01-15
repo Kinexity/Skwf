@@ -900,13 +900,17 @@ def DLA_draw():
 def sweep(grid, beta, L):
 	pos_arr = np.random.randint(0, L, (L * L,2))
 	probs = np.random.uniform(0.,1.,size = (L * L))
-	for pos,r in zip(pos_arr,probs):
-		delta = (grid[pos[0],(pos[1] + 1) % L] + grid[pos[0],(pos[1] - 1) % L] + grid[(pos[0] - 1) % L,pos[1]] + grid[(pos[0] + 1) % L,pos[1]]) * (2. * grid[pos[0], pos[1]])
-		if delta < 0:
-			grid[pos[0], pos[1]] *= -1
-		else:
-			prob = np.exp(-beta * delta)
-			grid[pos[0], pos[1]] *= ((r >= prob) - (r < prob))
+	axises = np.random.randint(0,2,size = (L * L))
+	for pos,r,axis in zip(pos_arr,probs,axises):
+		delta = 0.
+		p0, p1 = pos[0], pos[1]
+		delta += (grid[p0,(p1 + 1) % L] + grid[p0,(p1 - 1) % L] + grid[(p0 - 1) % L,p1] + grid[(p0 + 1) % L,p1]) * grid[p0, p1]
+		p0, p1 = (pos[0] + axis) % L, (pos[1] + (1 - axis)) % L
+		delta += (grid[p0,(p1 + 1) % L] + grid[p0,(p1 - 1) % L] + grid[(p0 - 1) % L,p1] + grid[(p0 + 1) % L,p1]) * grid[p0, p1]
+		delta -= 2 * grid[pos[0], pos[1]] * grid[p0,p1]
+		delta *= 2
+		if delta < 0 or r < np.exp(-beta * delta):
+			grid[pos[0], pos[1]], grid[(pos[0] + axis) % L, (pos[1] + (1 - axis)) % L] = grid[(pos[0] + axis) % L, (pos[1] + (1 - axis)) % L], grid[pos[0], pos[1]]
 
 def MCS(L=5, norm=1000):
 	Ts = np.linspace(1.,5.,5)
@@ -932,47 +936,41 @@ def chi(grid, L, col_ind):
 			sum += grid[row_ind_loc, col_ind_loc] * grid[row_ind_loc, (col_ind_loc + col_ind) % L]
 	return sum / L ** 2
 
-def MCS_hb(L=500):
+def MCS_hb(L=200):
 	T = 2.
 	mag_mods = {}
 	grid = np.random.choice([-1,1],(L,L))
-	ts = [10,20,50,100,200,500,1000,2000,5000]
+	ts = (10 ** np.linspace(1.,np.log10(500000))).astype(int)#np.array(range(1,500001))
 	R = []
-	for i in range(5001):
+	for i in range(500001):
 		sweep(grid, 1 / T, L)
-		#if i in [10,100,1000,5000]:
-		#	#Cs = np.array([chi(grid, L, l) for l in range(L // 2)])
-		#	#lim = -(np.argmax(np.flip(Cs > np.exp(-1.))) + 1)
-		#	#Cs_trim = Cs[:lim]
-		#	#C = -np.sum(np.log(Cs_trim))
-		#	#plt.plot(Cs)
-		#	plt.imshow(grid, interpolation='nearest',cmap='magma')
-		#	plt.grid()
-		#	plt.show()
 		if i in ts:
 			Cs = np.array([chi(grid, L, l) for l in range(L // 2)])
-			lim = np.argmax(np.cumsum(Cs > np.exp(-1.))) + 1
+			lim = -(np.argmax(np.flip(Cs > np.exp(-1.))) + 1)
 			Cs_trim = Cs[:lim]
 			C = -np.sum(np.log(Cs_trim))
-			R.append(lim * (lim + 1) / (2 * C))
-		print(i)
-	plt.clf()
-	plt.plot(ts,np.array(R) * (ts[-1] ** (1 / 2)) / R[-1],"*r",label="R")
-	plt.plot(ts,np.sqrt(ts),"-g",label="t**1/2")
-	plt.yscale("log")
-	plt.xscale("log")
-	plt.legend()
-	plt.show()
+			plt.clf()
+			plt.plot(Cs)
+			plt.savefig("chi_" + str(i) + ".png")
+			plt.clf()
+			plt.imshow(grid, interpolation='nearest',cmap='magma')
+			plt.grid()
+			plt.savefig(str(i) + ".png")
+		#if i in ts:
+		#Cs = np.array([chi(grid, L, l) for l in range(L // 2)])
+		#lim = np.argmax(np.cumsum(Cs > np.exp(-1.))) + 1
+		#Cs_trim = Cs[:lim]
+		#C = -np.sum(np.log(Cs_trim))
+		#R.append(lim * (lim + 1) / (2 * C))
+		#print(i)
+	#plt.clf()
+	#plt.plot(ts,np.array(R[1:]) * (ts[-1] ** (1 / 3)) / R[-1],"*r",label="R")
+	#plt.plot(ts,np.cbrt(ts),"-g",label="t**1/3")
+	#plt.yscale("log")
+	#plt.xscale("log")
+	#plt.legend()
+	#plt.show()
 	return
-
-def test():
-	ts = np.array([10, 20, 50, 100, 200, 500, 1000, 2000, 5000])
-	R = 1 / np.array([76678.90254210735, 34257.08959153745, 15512.010142922078, 8395.911168268487, 6021.3671186718675, 4108.885033247207, 2868.6649283142388, 2087.453491472444, 1441.7309553167202])
-	plt.plot(ts,R * (ts[0] ** (1 / 2)) / R[0])
-	plt.plot(ts,ts ** (1 / 2))
-	plt.yscale("log")
-	plt.xscale("log")
-	plt.show()
 
 @jit(nopython=True)
 def MCS_thr(B,L):
@@ -991,8 +989,6 @@ def grid_energy(grid, L):
 	for i in range(L):
 		for j in range(L):
 			energy -= grid[i,j] * (grid[(i - 1) % L,j] + grid[(i + 1) % L,j] + grid[i,(j - 1) % L] + grid[i,(j + 1) % L])
-	#energy = -np.sum(grid * (np.roll(grid, 1, axis=0) + np.roll(grid, -1, axis=0)
-	#+ np.roll(grid, 1, axis=1) + np.roll(grid, -1, axis=1)))
 	return energy
 
 def MCS_thr_2(B,L):
@@ -1047,22 +1043,180 @@ def MCS_2_main():
 	return
 
 def lnp():
-	M = np.loadtxt("C:\\Users\\26kub\\source\\repos\\skwf_cpp\\skwf_cpp\\data.txt")
-	plt.plot(M[:,0],M[:,2],".r",label="L=10")
-	plt.legend()
+	#M =
+	#np.loadtxt("C:\\Users\\26kub\\source\\repos\\skwf_cpp\\skwf_cpp\\data.txt")
+	#plt.plot(M[:,0],M[:,2],".r",label="L=10")
+	#plt.legend()
+	#plt.show()
+	#M =
+	#np.loadtxt("C:\\Users\\26kub\\source\\repos\\skwf_cpp\\skwf_cpp\\data_counters.txt")
+	#plt.plot(M[:,0],M[:,1],".r",label="L=10")
+	#plt.legend()
+	#plt.show()
+	M1 = np.loadtxt("C:\\Users\\26kub\\source\\repos\\skwf_cpp\\skwf_cpp\\data_nums.txt")
+	M2 = M1[:-1] - M1[1:]
+	avg = np.average(M2)
+	var = np.var(M2)
+	print(avg, var)
+	M = np.where(M2 > (avg - 2 * var), np.where(M2 < (avg + 2 * var),M2,0), 0)
+	avg = np.average(M)
+	var = np.var(M)
+	print(avg, var)
+	min = np.min(M)
+	max = np.max(M)
+	print(min, max, M)
+	print(np.linspace(min,max, 50))
+	plt.hist(M, bins=(np.linspace(min,max, 50)))
 	plt.show()
 
 def lnp2():
-	M = np.loadtxt("C:\\Users\\26kub\\source\\repos\\SIR_simulation\\sim_data.txt")
-	plt.plot(M[:,0],M[:,2],".r",label="L=10")
-	plt.legend()
+	while True:
+		M = np.loadtxt("C:\\Users\\26kub\\source\\repos\\SIR_simulation\\sim_data.txt")
+		plt.plot(M[:,0],M[:,1],".y",label="Zarażalni")
+		plt.plot(M[:,0],M[:,3],".r",label="Chorzy")
+		plt.plot(M[:,0],M[:,4],".g",label="Wyzdrowiali")
+		plt.legend()
+		plt.show()
+		M = np.loadtxt("C:\\Users\\26kub\\source\\repos\\SIR_simulation\\sim_histo_data.txt")
+		mx = int(np.max(M))
+		plt.hist(M,bins=(np.linspace(0.,mx + 1,mx + 2) - 0.5))
+		plt.yscale("log")
+		plt.show()
+
+height_crit = 3
+
+@jit#(nopython=True)
+def cycle(grid:np.ndarray, size):
+	grid_av = np.zeros((size + 2,size + 2),int)
+	grid[random.randint(1,size), random.randint(1,size)] +=1
+	#grid[16, 16] +=1
+	while np.max(grid) > height_crit :
+		# get arrays to index all places at once
+		ix, iy = np.where(grid > height_crit)
+		# topple
+		grid[ix,iy] -= 4
+		grid_av[ix,iy] = 1
+		grid[ix + 1,iy] += 1
+		grid[ix - 1,iy] += 1
+		grid[ix,iy + 1] += 1
+		grid[ix,iy - 1] += 1
+		# record avalanche .  .  .
+		# empty border .  .  .
+	grid[0,:] = 0
+	grid[size + 1,:] = 0
+	grid[:,0] = 0
+	grid[:,size + 1] = 0
+	return np.sum(grid_av)
+
+@jit#(nopython=True)
+def cycle2(grid:np.ndarray, size):
+	#grid_av = np.zeros((size + 2,size + 2),int)
+	#grid[random.randint(1,size), random.randint(1,size)] +=1
+	#grid[16, 16] +=1
+	cntr = 0
+	grids = []
+	while np.max(grid) > height_crit :
+		# get arrays to index all places at once
+		ix, iy = np.where(grid > height_crit)
+		# topple
+		grid[ix,iy] -= 4
+		grid[ix + 1,iy] += 1
+		grid[ix - 1,iy] += 1
+		grid[ix,iy + 1] += 1
+		grid[ix,iy - 1] += 1
+		# record avalanche .  .  .
+		# empty border .  .  .
+		if cntr % 100 == 0:
+			grids.append(grid.copy())
+		cntr += 1
+		grid[0,:] = 0
+		grid[size + 1,:] = 0
+		grid[:,0] = 0
+		grid[:,size + 1] = 0
+	grids.append(grid.copy())
+	return grids
+
+def pryzma():
+	try:
+		os.mkdir('pryzma')
+	except Exception:
+		pass
+	size = 31
+	ziarna_count = []
+	grid = np.zeros((size + 2,size + 2),int)
+	for i in range(3000):
+		cycle(grid,size)
+		#ziarna_count.append(np.sum(grid))
+		#if i % 100 == 0:
+		#	print(i)
+		#	plt.clf()
+		#	plt.axis('off')
+		#	plt.imshow(grid, interpolation='none', cmap='rainbow', vmin=0, vmax=8)
+		#	plt.grid()
+		#	plt.colorbar(ticks=range(9))
+		#	plt.savefig("pryzma/sr" + str(i) + ".png")
+	av_size = []
+	for i in range(50000):
+		loc_size = cycle(grid,size)
+		if loc_size > 0:
+			av_size.append(loc_size)
+		else:
+			i -= 1
+		#ziarna_count.append(np.sum(grid))
+		if i % 100 == 0:
+			print(i)
+		#	plt.clf()
+		#	plt.axis('off')
+		#	plt.imshow(grid, interpolation='none', cmap='rainbow', vmin=0, vmax=8)
+		#	plt.grid()
+		#	plt.colorbar(ticks=range(9))
+		#	plt.savefig("pryzma/sr" + str(i) + ".png")
+	#plt.plot(ziarna_count)
+	#plt.savefig("pryzma/stab.png")
+	#plt.show()
+	#MIN = np.min(av_size)
+	#MAX = np.max(av_size)
+	hist,bins = np.histogram(av_size, bins = np.max(av_size))
+	#plt.hist(av_size, bins = 10 ** np.linspace(np.log10(MIN), np.log10(MAX), 15))
+	plt.plot(bins[:-1], hist)
+	plt.plot(bins[:-1], bins[:-1] ** (-1) * bins[0] * hist[0])
+	plt.xscale("log")
+	plt.yscale("log")
+	plt.savefig("pryzma/stab.png")
 	plt.show()
+	return
+
+def big_grid():
+	try:
+		os.mkdir('pryzma')
+	except Exception:
+		pass
+	size = 100
+	ziarna_count = []
+	grid = 7 * np.ones((size + 2,size + 2),int)
+	grid[0,:] = 0
+	grid[size + 1,:] = 0
+	grid[:,0] = 0
+	grid[:,size + 1] = 0
+	grids = cycle2(grid,size)
+	for i in range(len(grids)):
+		print(i)
+		plt.clf()
+		plt.axis('off')
+		plt.imshow(grids[i], interpolation='none', cmap='rainbow', vmin=0, vmax=8)
+		plt.grid()
+		plt.colorbar(ticks=range(9))
+		plt.savefig("pryzma/big" + str(i) + ".png")
+	#plt.savefig("pryzma/stab.png")
+	return
 
 def main():
 	#DLA_draw()
 	#MCS()
-	MCS_2_main()
-	#lnp2()
+	#MCS_2_main()
+	#lnp()
+	pryzma()
+	#big_grid()
 	return
 
 main()
