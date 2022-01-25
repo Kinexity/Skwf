@@ -1145,7 +1145,7 @@ def pryzma():
 	ziarna_count = []
 	grid = np.zeros((size + 2,size + 2),int)
 	for i in range(3000):
-		cycle(grid,size)
+		loc_size = cycle(grid,size)
 		#ziarna_count.append(np.sum(grid))
 		#if i % 100 == 0:
 		#	print(i)
@@ -1154,7 +1154,7 @@ def pryzma():
 		#	plt.imshow(grid, interpolation='none', cmap='rainbow', vmin=0, vmax=8)
 		#	plt.grid()
 		#	plt.colorbar(ticks=range(9))
-		#	plt.savefig("pryzma/sr" + str(i) + ".png")
+		#	plt.savefig("pryzma/" + str(i) + ".png")
 	av_size = []
 	for i in range(50000):
 		loc_size = cycle(grid,size)
@@ -1171,15 +1171,31 @@ def pryzma():
 		#	plt.grid()
 		#	plt.colorbar(ticks=range(9))
 		#	plt.savefig("pryzma/sr" + str(i) + ".png")
+	plt.clf()
 	#plt.plot(ziarna_count)
+	#plt.title("Osiąganie stabilnej liczby ziaren - wszystkie cykle")
 	#plt.savefig("pryzma/stab.png")
 	#plt.show()
 	#MIN = np.min(av_size)
 	#MAX = np.max(av_size)
-	hist,bins = np.histogram(av_size, bins = np.max(av_size))
-	#plt.hist(av_size, bins = 10 ** np.linspace(np.log10(MIN), np.log10(MAX), 15))
-	plt.plot(bins[:-1], hist)
-	plt.plot(bins[:-1], bins[:-1] ** (-1) * bins[0] * hist[0])
+	binsp = 10 ** np.histogram_bin_edges(np.log10(av_size), bins=40)
+	binsp2 = [binsp[0]]
+	for i in range(1,len(binsp)):
+		if (binsp[i] - binsp2[-1] > 1):
+			binsp2.append(binsp[i])
+	binsp = np.array(binsp2)
+	print(binsp)
+	hist,binsp = np.histogram(av_size, binsp)
+	hist = np.flip(np.cumsum(np.flip(hist)))
+	#bins = 10 ** np.linspace(np.log10(MIN), np.log10(MAX), 15)
+	#binsp = 10**binsp
+	#print(binsp)
+	#hist,binsp = np.histogram(av_size, binsp)
+	#print(binsp)
+	#plt.hist(bins, av_size)
+	plt.plot(binsp[:-1], hist)
+	#plt.plot(binsp[:-1], binsp[:-1] ** (-1) * binsp[0] * hist[0])
+	plt.title("Częstotliwość występowania lawin - kumulatywny")
 	plt.xscale("log")
 	plt.yscale("log")
 	plt.savefig("pryzma/stab.png")
@@ -1210,12 +1226,93 @@ def big_grid():
 	#plt.savefig("pryzma/stab.png")
 	return
 
+def Gray_Scott():
+	N = 1000
+	dx = 0.02
+	Du = 2e-5
+	Dv = 1e-5
+	F = 0.025
+	k = 0.055
+	u = np.ones(N)
+	v = np.zeros(N)
+	for i in range(N // 4,3 * N // 4):
+		u[i] = np.random.rand() * 0.2 + 0.4
+		v[i] = np.random.rand() * 0.2 + 0.2
+	cycles = 10001
+	u_a = np.zeros((cycles // N + 1,N))
+	v_a = np.zeros((cycles // N + 1,N))
+	for i in range(cycles):
+		du = Du * (np.roll(u,1) + np.roll(u,-1) - 2 * u) / dx ** 2 - u * v ** 2 + F - F * u
+		dv = Dv * (np.roll(v,1) + np.roll(v,-1) - 2 * v) / dx ** 2 + u * v ** 2 - (F + k) * v
+		u += du
+		v += dv
+		if (i in [0,5000,10000]):
+			plt.plot(u, label="u")
+			plt.plot(v, label="v")
+			plt.legend()
+			plt.show()
+		if (i % 100 == 0):
+			u_a[i // 100] = u
+			v_a[i // 100] = v
+	plt.axis('off')
+	plt.imshow(u_a, interpolation='none')
+	plt.grid()
+	#plt.colorbar(ticks=range(9))
+	plt.show()
+	plt.axis('off')
+	plt.imshow(v_a, interpolation='none')
+	plt.grid()
+	#plt.colorbar(ticks=range(9))
+	plt.show()
+	return
+
+def Gray_Scott_2():
+	Fs = [0.025 ,0.03 ,0.01 ,0.04 ,0.052 ,0.037]
+	ks = [0.055 ,0.062 , 0.047 ,0.062 ,0.0615 ,0.06]
+	N = 100
+	dx = 0.02
+	Du = 2e-5
+	Dv = 1e-5
+	cycles = 5001
+	for F,k in zip(Fs,ks):
+		u_matrix = np.ones((N,N))
+		v_matrix = np.zeros((N,N))
+		for i in range(N // 4,3 * N // 4):
+			for j in range(N // 4,3 * N // 4):
+				u_matrix[i, j] = np.random.rand() * 0.2 + 0.4
+				v_matrix[i, j] = np.random.rand() * 0.2 + 0.2
+		for i in range(cycles):
+			du = Du * (np.roll(u_matrix,1,axis=0) + np.roll(u_matrix,1,axis=1) + np.roll(u_matrix,-1,axis=0) + np.roll(u_matrix,-1,axis=1) - 4 * u_matrix) / dx ** 2 - u_matrix * v_matrix ** 2 + F - F * u_matrix
+			dv = Dv * (np.roll(v_matrix,1,axis=0) + np.roll(v_matrix,1,axis=1) + np.roll(v_matrix,-1,axis=0) + np.roll(v_matrix,-1,axis=1) - 4 * v_matrix) / dx ** 2 + u_matrix * v_matrix ** 2 - (F + k) * v_matrix
+			u_matrix += du
+			v_matrix += dv
+			if (i in [5000]):
+				plt.axis('off')
+				plt.imshow(u_matrix, interpolation='none')
+				plt.grid()
+				#plt.colorbar(ticks=range(9))
+				plt.show()
+		break
+		#plt.axis('off')
+		#plt.imshow(u_a, interpolation='none')
+		#plt.grid()
+		##plt.colorbar(ticks=range(9))
+		#plt.show()
+		#plt.axis('off')
+		#plt.imshow(v_a, interpolation='none')
+		#plt.grid()
+		##plt.colorbar(ticks=range(9))
+		#plt.show()
+	return
+
 def main():
 	#DLA_draw()
 	#MCS()
 	#MCS_2_main()
 	#lnp()
-	pryzma()
+	#Gray_Scott()
+	#pryzma()
+	Gray_Scott_2()
 	#big_grid()
 	return
 
